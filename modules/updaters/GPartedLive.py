@@ -23,9 +23,13 @@ class GPartedLive(GenericUpdater):
         file_path = folder_path / FILE_NAME
         super().__init__(file_path)
 
-        self.checksum_file: str = requests.get(
-            "https://gparted.org/gparted-live/stable/CHECKSUMS.TXT"
-        ).text.strip()
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        resp = robust_get("https://gparted.org/gparted-live/stable/CHECKSUMS.TXT", retries=get_cli_retries(), delay=1)
+        if resp is None:
+            print("GPartedLive.py HAD 403 ERROR AND CANNOT BE DOWNLOADED")
+            return
+        self.checksum_file: str = resp.text.strip()
 
     @cache
     def _get_download_link(self) -> str:

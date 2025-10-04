@@ -2,6 +2,7 @@ import hashlib
 import logging
 import re
 import shutil
+import time
 import tomllib
 import traceback
 import uuid
@@ -230,45 +231,77 @@ def parse_hash(
     return hash
 
 
-def download_file(url: str, local_file: Path, progress_bar: bool = True) -> None:
+def download_file(url: str, local_file: Path, progress_bar: bool = True, retries=0) -> None:
     """
     Download a file from a given URL and save it to the local file system.
-
-    Args:
-        url (str): The URL of the file to download.
-        local_file (Path): The path where the downloaded file will be saved on the local file system.
-        progress_bar (bool): Whether to show a progress bar during the download (default: True).
-
-    Returns:
-        None
+    Retries only on HTTP 403 errors. Any other error aborts immediately.
     """
+
     part_file = local_file.with_suffix(".part")
     logging.debug(f"[download_file] Downloading {url} to {part_file.resolve()}")
 
-    try:
-        with requests.get(url, stream=True) as r:
-            total_size = int(r.headers.get("content-length", 0))  # Sizes in bytes
+    retries_str = str(retries).lower() if isinstance(retries, str) else retries
+    if retries_str == "all":
+        user_max_retries = float('inf')
+    else:
+        try:
+            user_max_retries = int(retries)
+        except Exception:
+            user_max_retries = 0
 
-            with open(part_file, "wb") as f:
-                if progress_bar:
-                    with tqdm(
-                        total=total_size, unit="B", desc=part_file.name, unit_scale=True
-                    ) as pbar:
-                        for chunk in r.iter_content(chunk_size=1024):
-                            if chunk:
-                                f.write(chunk)
-                                pbar.update(len(chunk))
-                else:
-                    shutil.copyfileobj(r.raw, f)
-    except requests.exceptions.RequestException:
-        logging.exception(f"Failed to download {url} to {part_file.resolve()}")
-        if part_file.exists():
-            part_file.unlink()
-        raise
-    except KeyboardInterrupt:
-        logging.info(f"Download of {url} to {part_file.resolve()} was cancelled")
-        if part_file.exists():
-            part_file.unlink()
-        raise
-
+    attempt = 0
+    started = False
+    while True:
+        try:
+            resume_byte_pos = part_file.stat().st_size if part_file.exists() else 0
+            headers = {"Range": f"bytes={resume_byte_pos}-"} if resume_byte_pos > 0 else {}
+            with requests.get(url, stream=True, headers=headers) as r:
+                if r.status_code == 403:
+                    attempt += 1
+                    max_retries = 7 if not started else user_max_retries
+                    logging.warning(f"HTTP 403 Forbidden (attempt {attempt}/{max_retries if max_retries != float('inf') else '∞'}): {url}")
+                    if max_retries != float('inf') and attempt > max_retries:
+                        logging.error(f"Exceeded maximum retries for {url} (HTTP 403)")
+                        if part_file.exists():
+                            part_file.unlink()
+                        raise Exception(f"Exceeded maximum retries for {url} (HTTP 403)")
+                    else:
+                        time.sleep(1)
+                        continue
+                elif r.status_code != 200 and r.status_code != 206:
+                    logging.error(f"Download failed with HTTP status {r.status_code} for {url}")
+                    if part_file.exists():
+                        part_file.unlink()
+                    raise Exception(f"Download failed with HTTP status {r.status_code} for {url}")
+                total_size = int(r.headers.get("content-length", 0)) + resume_byte_pos if "content-length" in r.headers else None
+                mode = "ab" if resume_byte_pos > 0 else "wb"
+                with open(part_file, mode) as f:
+                    if progress_bar:
+                        with tqdm(
+                            total=total_size, initial=resume_byte_pos, unit="B", desc=part_file.name, unit_scale=True
+                        ) as pbar:
+                            for chunk in r.iter_content(chunk_size=1024):
+                                if chunk:
+                                    f.write(chunk)
+                                    pbar.update(len(chunk))
+                                    started = True
+                    else:
+                        before = part_file.stat().st_size if part_file.exists() else 0
+                        shutil.copyfileobj(r.raw, f)
+                        after = part_file.stat().st_size if part_file.exists() else 0
+                        if after > before:
+                            started = True
+        except requests.exceptions.RequestException as e:
+            # For all network errors except HTTP 403, just wait and retry forever
+            logging.warning(f"Network error: {e}\nWaiting for connection to resume for {url}...")
+            time.sleep(5)
+            continue
+        except KeyboardInterrupt:
+            logging.info(f"Download of {url} to {part_file.resolve()} was cancelled")
+            if part_file.exists():
+                part_file.unlink()
+            raise
+        else:
+            break
+    # After successful download, rename the part file to the final file
     part_file.rename(local_file)

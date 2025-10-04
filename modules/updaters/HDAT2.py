@@ -42,13 +42,17 @@ class HDAT2(GenericUpdater):
         file_path = folder_path / self.file_name
         super().__init__(file_path)
 
-        self.download_page = requests.get(DOWNLOAD_PAGE_URL)
-
-        if self.download_page.status_code != 200:
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        resp = robust_get(DOWNLOAD_PAGE_URL, retries=get_cli_retries(), delay=1)
+        if resp is None:
+            print("HDAT2.py HAD 403 ERROR AND CANNOT BE DOWNLOADED")
+            return
+        if resp.status_code != 200:
             raise ConnectionError(
                 f"Failed to fetch the download page from '{DOWNLOAD_PAGE_URL}'"
             )
-
+        self.download_page = resp
         self.soup_download_page = BeautifulSoup(
             self.download_page.content, features="html.parser"
         )

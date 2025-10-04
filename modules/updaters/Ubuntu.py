@@ -41,13 +41,13 @@ class Ubuntu(GenericUpdater):
             if valid_ed.lower() == self.edition.lower()
         )
 
-        self.download_page = requests.get(DOWNLOAD_PAGE_URL)
 
-        if self.download_page.status_code != 200:
-            raise ConnectionError(
-                f"Failed to fetch the download page from '{DOWNLOAD_PAGE_URL}'"
-            )
-
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        self.download_page = robust_get(DOWNLOAD_PAGE_URL, retries=get_cli_retries(), delay=1)
+        if self.download_page is None:
+            print("Ubuntu.py HAD 403 ERROR AND CANNOT BE DOWNLOADED")
+            return
         self.soup_download_page = BeautifulSoup(
             self.download_page.content, features="html.parser"
         )
@@ -59,15 +59,16 @@ class Ubuntu(GenericUpdater):
 
     def check_integrity(self) -> bool:
         latest_version_str = self._version_to_str(self._get_latest_version())
-
         sha256_url = f"{DOWNLOAD_PAGE_URL}/{latest_version_str}/SHA256SUMS"
-
-        sha256_sums = requests.get(sha256_url).text
-
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        resp = robust_get(sha256_url, retries=get_cli_retries(), delay=1)
+        if resp is None:
+            raise ConnectionError(f"Failed to fetch SHA256SUMS from '{sha256_url}'")
+        sha256_sums = resp.text
         sha256_sum = parse_hash(
             sha256_sums, [f"ubuntu-{latest_version_str}-desktop-amd64.iso"], 0
         )
-
         return sha256_hash_check(
             self._get_complete_normalized_file_path(absolute=True),
             sha256_sum,
@@ -99,9 +100,12 @@ class Ubuntu(GenericUpdater):
         # This is `x.y`, however to get `x.y.z` we need to go to `/x.y`
         xy_version = latest.getText().split()[1]
 
-        version_page = requests.get(f"{DOWNLOAD_PAGE_URL}/{xy_version}")
-
-        soup_version_page = BeautifulSoup(version_page.content, features="html.parser")
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        resp = robust_get(f"{DOWNLOAD_PAGE_URL}/{xy_version}", retries=get_cli_retries(), delay=1)
+        if resp is None:
+            raise ConnectionError(f"Failed to fetch version page from '{DOWNLOAD_PAGE_URL}/{xy_version}'")
+        soup_version_page = BeautifulSoup(resp.content, features="html.parser")
 
         title = soup_version_page.find("title")
 

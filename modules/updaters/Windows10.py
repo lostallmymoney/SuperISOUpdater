@@ -85,13 +85,17 @@ class Windows10(GenericUpdater):
             "referer": "folfy.blue",
         }
 
-        self.download_page = requests.get(DOWNLOAD_PAGE_URL, headers=self.headers)
-
-        if self.download_page.status_code != 200:
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        resp = robust_get(DOWNLOAD_PAGE_URL, retries=get_cli_retries(), delay=1, headers=self.headers)
+        if resp is None:
+            print("Windows10.py HAD 403 ERROR AND CANNOT BE DOWNLOADED")
+            return
+        if resp.status_code != 200:
             raise ConnectionError(
                 f"Failed to fetch the download page from '{DOWNLOAD_PAGE_URL}'"
             )
-
+        self.download_page = resp
         self.soup_download_page = BeautifulSoup(
             self.download_page.content, features="html.parser"
         )

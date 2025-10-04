@@ -54,15 +54,18 @@ class Fedora(GenericUpdater):
         # Weird exception they have
         url_edition = self.edition.lower() if self.edition != "MATE_Compiz" else "mate"
 
-        self.download_page = requests.get(
-            DOWNLOAD_PAGE_URL.replace("[[EDITION]]", url_edition)
-        )
-
-        if self.download_page.status_code != 200:
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        url = DOWNLOAD_PAGE_URL.replace("[[EDITION]]", url_edition)
+        resp = robust_get(url, retries=get_cli_retries(), delay=1)
+        if resp is None:
+            print("Fedora.py HAD 403 ERROR AND CANNOT BE DOWNLOADED")
+            return
+        if resp.status_code != 200:
             raise ConnectionError(
-                f"Failed to fetch the download page from '{self.download_page.url}'"
+                f"Failed to fetch the download page from '{url}'"
             )
-
+        self.download_page = resp
         self.soup_download_page = BeautifulSoup(
             self.download_page.content, features="html.parser"
         )
@@ -76,8 +79,12 @@ class Fedora(GenericUpdater):
         latest_version = self._get_latest_version()
         sha256_url = f"https://download.fedoraproject.org/pub/fedora/linux/releases/{latest_version[0]}/Spins/x86_64/iso/Fedora-Spins-{latest_version[0]}-{latest_version[1]}{'.'+latest_version[2] if len(latest_version)>2 else ''}-x86_64-CHECKSUM"
 
-        sha256_sums = requests.get(sha256_url).text
-
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        resp = robust_get(sha256_url, retries=get_cli_retries(), delay=1)
+        if resp is None:
+            raise ConnectionError(f"Failed to fetch CHECKSUM from '{sha256_url}'")
+        sha256_sums = resp.text
         sha256_sum = parse_hash(sha256_sums, [f"SHA256 (Fedora-{self.edition}"], -1)
 
         return sha256_hash_check(

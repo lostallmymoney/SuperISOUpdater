@@ -19,7 +19,12 @@ def github_get_latest_version(owner: str, repo: str) -> dict:
 
     logging.debug(f"Fetching latest release from {api_url}")
 
-    release = requests.get(f"{api_url}/releases/latest").json()
+    from modules.utils_network import robust_get
+    from modules.utils_network_patch import get_cli_retries
+    resp = robust_get(f"{api_url}/releases/latest", retries=get_cli_retries(), delay=1)
+    if resp is None:
+        raise ConnectionError(f"Failed to fetch latest release from '{api_url}/releases/latest'")
+    release = resp.json()
 
     logging.debug(f"GitHub release fetched from {api_url}: {release}")
 

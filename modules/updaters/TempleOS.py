@@ -43,17 +43,16 @@ class TempleOS(GenericUpdater):
             if valid_ed.lower() == self.edition.lower()
         )
 
-        self.download_page = requests.get(DOWNLOAD_PAGE_URL)
 
-        if self.download_page.status_code != 200:
-            raise ConnectionError(
-                f"Failed to fetch the download page from '{DOWNLOAD_PAGE_URL}'"
-            )
-
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        self.download_page = robust_get(DOWNLOAD_PAGE_URL, retries=get_cli_retries(), delay=1)
+        if self.download_page is None:
+            print("TempleOS.py HAD 403 ERROR AND CANNOT BE DOWNLOADED")
+            return
         self.soup_download_page = BeautifulSoup(
             self.download_page.content, features="html.parser"
         )
-
         self.server_file_name = (
             f"TempleOS{'Lite' if self.edition == 'Lite' else ''}.ISO"
         )
@@ -64,11 +63,13 @@ class TempleOS(GenericUpdater):
 
     def check_integrity(self) -> bool:
         md5_url = f"{DOWNLOAD_PAGE_URL}/md5sums.txt"
-
-        md5_sums = requests.get(md5_url).text
-
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        resp = robust_get(md5_url, retries=get_cli_retries(), delay=1)
+        if resp is None:
+            raise ConnectionError(f"Failed to fetch md5sums.txt from '{md5_url}'")
+        md5_sums = resp.text
         md5_sum = parse_hash(md5_sums, [self.server_file_name], 0)
-
         return md5_hash_check(
             self._get_complete_normalized_file_path(absolute=True),
             md5_sum,

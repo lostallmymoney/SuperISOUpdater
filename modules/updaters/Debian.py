@@ -47,13 +47,17 @@ class Debian(GenericUpdater):
 
         # Make the parameter case insensitive, and find back the correct case using valid_editions
 
-        self.download_page = requests.get(DOWNLOAD_PAGE_URL)
-
-        if self.download_page.status_code != 200:
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        resp = robust_get(DOWNLOAD_PAGE_URL, retries=get_cli_retries(), delay=1)
+        if resp is None:
+            print("Debian.py HAD 403 ERROR AND CANNOT BE DOWNLOADED")
+            return
+        if resp.status_code != 200:
             raise ConnectionError(
                 f"Failed to fetch the download page from '{DOWNLOAD_PAGE_URL}'"
             )
-
+        self.download_page = resp
         self.soup_download_page = BeautifulSoup(
             self.download_page.content, features="html.parser"
         )
@@ -74,8 +78,11 @@ class Debian(GenericUpdater):
     def check_integrity(self) -> bool:
         sha256_url = f"{DOWNLOAD_PAGE_URL}/SHA256SUMS"
 
-        sha256_sums = requests.get(sha256_url).text
-
+        from modules.utils_network import robust_get
+        resp = robust_get(sha256_url, retries=get_cli_retries(), delay=1)
+        if resp is None:
+            raise ConnectionError(f"Failed to fetch SHA256SUMS from '{sha256_url}'")
+        sha256_sums = resp.text
         sha256_sum = parse_hash(
             sha256_sums,
             [str(self._get_complete_normalized_file_path(absolute=False))],

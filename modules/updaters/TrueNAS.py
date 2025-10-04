@@ -33,15 +33,14 @@ class TrueNAS(GenericUpdater):
         file_path = folder_path / FILE_NAME
         super().__init__(file_path)
 
+
         self.download_page_url = DOWNLOAD_PAGE_URL.replace("[[EDITION]]", self.edition)
-
-        self.download_page = requests.get(self.download_page_url)
-
-        if self.download_page.status_code != 200:
-            raise ConnectionError(
-                f"Failed to fetch the download page from '{DOWNLOAD_PAGE_URL}'"
-            )
-
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        self.download_page = robust_get(self.download_page_url, retries=get_cli_retries(), delay=1)
+        if self.download_page is None:
+            print("TrueNAS.py HAD 403 ERROR AND CANNOT BE DOWNLOADED")
+            return
         self.soup_download_page = BeautifulSoup(
             self.download_page.content, features="html.parser"
         )
@@ -57,16 +56,17 @@ class TrueNAS(GenericUpdater):
 
     def check_integrity(self) -> bool:
         sha256_url = f"{self._get_download_link()}.sha256"
-
-        # Only 1 sum in file
-        sha256_sums = requests.get(sha256_url).text.split()
-
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        resp = robust_get(sha256_url, retries=get_cli_retries(), delay=1)
+        if resp is None:
+            raise ConnectionError(f"Failed to fetch sha256 from '{sha256_url}'")
+        sha256_sums = resp.text.split()
         # for some reason TrueNAS has two different formats for their sha256 file
         if sha256_sums[0] == "SHA256":
             sha256_sum = sha256_sums[-1]
         else:
             sha256_sum = sha256_sums[0]
-
         return sha256_hash_check(
             self._get_complete_normalized_file_path(absolute=True),
             sha256_sum,

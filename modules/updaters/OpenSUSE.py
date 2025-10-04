@@ -40,7 +40,12 @@ class OpenSUSE(GenericUpdater):
         latest_version_str = self._version_to_str(self._get_latest_version())
         url = f"{self.download_page_url}/{latest_version_str}"
 
-        edition_page = requests.get(f"{url}?jsontable").json()["data"]
+        from modules.utils_network import robust_get
+        resp = robust_get(f"{url}?jsontable", retries=get_cli_retries(), delay=1)
+        if resp is None:
+            print("OpenSUSE.py HAD 403 ERROR AND CANNOT BE DOWNLOADED")
+            return
+        edition_page = resp.json()["data"]
 
         if any("product" in item["name"] for item in edition_page):
             url += "/product"
@@ -53,10 +58,12 @@ class OpenSUSE(GenericUpdater):
     def check_integrity(self) -> bool:
         sha256_url = f"{self._get_download_link()}.sha256"
 
-        sha256_sums = requests.get(sha256_url).text
-
+        from modules.utils_network import robust_get
+        resp = robust_get(sha256_url, retries=get_cli_retries(), delay=1)
+        if resp is None:
+            raise ConnectionError(f"Failed to fetch sha256 from '{sha256_url}'")
+        sha256_sums = resp.text
         sha256_sum = parse_hash(sha256_sums, [], 0)
-
         return sha256_hash_check(
             self._get_complete_normalized_file_path(absolute=True),
             sha256_sum,
@@ -64,10 +71,12 @@ class OpenSUSE(GenericUpdater):
 
     @cache
     def _get_latest_version(self) -> list[str]:
-        r = requests.get(f"{self.download_page_url}?jsontable")
-
-        data = r.json()["data"]
-
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        resp = robust_get(f"{self.download_page_url}?jsontable", retries=get_cli_retries(), delay=1)
+        if resp is None:
+            raise ConnectionError(f"Failed to fetch jsontable from '{self.download_page_url}'")
+        data = resp.json()["data"]
         local_version = self._get_local_version()
         latest = local_version or []
 
@@ -76,11 +85,13 @@ class OpenSUSE(GenericUpdater):
                 continue
             version_number = self._str_to_version(data[i]["name"][:-1])
             if self._compare_version_numbers(latest, version_number):
-                sub_r = requests.get(f"{self.download_page_url}/{self._version_to_str(version_number)}?jsontable")
-                sub_data = sub_r.json()["data"]
+                sub_url = f"{self.download_page_url}/{self._version_to_str(version_number)}?jsontable"
+                sub_resp = robust_get(sub_url, retries=get_cli_retries(), delay=1)
+                if sub_resp is None:
+                    continue
+                sub_data = sub_resp.json()["data"]
                 if not any("iso" in item["name"] or "product" in item["name"] for item in sub_data):
                     continue
-                
                 latest = version_number
 
         return latest

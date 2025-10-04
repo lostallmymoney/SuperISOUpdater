@@ -45,15 +45,17 @@ class Rescuezilla(GenericUpdater):
 
     def check_integrity(self) -> bool:
         sha256_url = self.release_info["files"]["SHA256SUM"]
-
-        sha256_sums = requests.get(sha256_url).text
-
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        resp = robust_get(sha256_url, retries=get_cli_retries(), delay=1)
+        if resp is None:
+            raise ConnectionError(f"Failed to fetch SHA256SUM from '{sha256_url}'")
+        sha256_sums = resp.text
         sha256_sum = parse_hash(
             sha256_sums,
             [str(self._get_complete_normalized_file_path(absolute=False))],
             0,
         )
-
         return sha256_hash_check(
             self._get_complete_normalized_file_path(absolute=True),
             sha256_sum,

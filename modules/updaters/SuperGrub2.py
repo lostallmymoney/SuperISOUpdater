@@ -35,13 +35,17 @@ class SuperGrub2(GenericUpdater):
         file_path = folder_path / FILE_NAME
         super().__init__(file_path)
 
-        self.download_page = requests.get(DOWNLOAD_PAGE_URL)
-
-        if self.download_page.status_code != 200:
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        resp = robust_get(DOWNLOAD_PAGE_URL, retries=get_cli_retries(), delay=1)
+        if resp is None:
+            print("SuperGrub2.py HAD 403 ERROR AND CANNOT BE DOWNLOADED")
+            return
+        if resp.status_code != 200:
             raise ConnectionError(
                 f"Failed to fetch the download page from '{DOWNLOAD_PAGE_URL}'"
             )
-
+        self.download_page = resp
         self.soup_download_page = BeautifulSoup(
             self.download_page.content, features="html.parser"
         )
@@ -86,14 +90,14 @@ class SuperGrub2(GenericUpdater):
 
         return sha256_hash_check(archive_to_check, sha_256_checksum)
 
-    def install_latest_version(self) -> None:
+    def install_latest_version(self, retries: int = 0) -> None:
         download_link: str = self._get_download_link()
 
         new_file = self._get_complete_normalized_file_path(absolute=True)
 
         archive_path = new_file.with_suffix(".zip")
 
-        download_file(download_link, archive_path)
+        download_file(download_link, archive_path, retries=retries)
 
         local_file = self._get_local_file()
 

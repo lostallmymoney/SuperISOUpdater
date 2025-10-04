@@ -47,7 +47,7 @@ def setup_logging(log_level: str, log_file: Path | None):
     logging.debug("Logging started")
 
 
-def run_updater(updater: GenericUpdater):
+def run_updater(updater: GenericUpdater, retries=0):
     """Run a single updater.
 
     Args:
@@ -62,18 +62,22 @@ def run_updater(updater: GenericUpdater):
             logging.info(
                 f"[{installer_for}] Updates available. Downloading and installing the latest version..."
             )
-            updater.install_latest_version()
+            updater.install_latest_version(retries=retries)
             logging.info(f"[{installer_for}] Update completed successfully!")
         else:
             logging.info(f"[{installer_for}] No updates available.")
-    except:
+    except (LookupError, AttributeError, ConnectionError) as e:
+        # Print a clean message for known download errors
+        print(f"{updater.__class__.__name__}.py HAD 403 ERROR AND CANNOT BE DOWNLOADED")
+        logging.error(f"[{installer_for}] {e}")
+    except Exception:
         logging.exception(
             f"[{installer_for}] An error occurred while updating. See traceback below."
         )
 
 
 def run_updaters(
-    install_path: Path, config: dict, updater_list: list[Type[GenericUpdater]]
+    install_path: Path, config: dict, updater_list: list[Type[GenericUpdater]], retries=0
 ):
     """Run updaters based on the provided configuration.
 
@@ -117,7 +121,7 @@ def run_updaters(
                     )
             # Run updater(s)
             for updater in updaters:
-                run_updater(updater)
+                run_updater(updater, retries=retries)
 
         else:
             run_updaters(install_path / key, value, updater_list)
@@ -138,15 +142,17 @@ def main():
         default="INFO",
         help="Set the log level (default: INFO)",
     )
-
-    # Add the optional argument for log file
     parser.add_argument(
         "-f", "--log-file", help="Path to the log file (default: log to console)"
     )
-
-    # Add the optional argument for config file
     parser.add_argument(
         "-c", "--config-file", help="Path to the config file (default: config.toml)"
+    )
+    parser.add_argument(
+        "-r",
+        "--retries",
+        default=0,
+        help="Number of retries per file on bad connections (use 'all' for infinite retries)",
     )
 
     args = parser.parse_args()
@@ -190,7 +196,7 @@ def main():
 
     available_updaters: list[Type[GenericUpdater]] = get_available_updaters()
 
-    run_updaters(ventoy_path, config, available_updaters)
+    run_updaters(ventoy_path, config, available_updaters, retries=args.retries)
 
     logging.debug("Finished execution")
 

@@ -30,13 +30,13 @@ class HirensBootCDPE(GenericUpdater):
         file_path = folder_path / FILE_NAME
         super().__init__(file_path)
 
-        self.download_page = requests.get(DOWNLOAD_PAGE_URL)
 
-        if self.download_page.status_code != 200:
-            raise ConnectionError(
-                f"Failed to fetch the download page from '{DOWNLOAD_PAGE_URL}'"
-            )
-
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        self.download_page = robust_get(DOWNLOAD_PAGE_URL, retries=get_cli_retries(), delay=1)
+        if self.download_page is None:
+            print("HirensBootCDPE.py HAD 403 ERROR AND CANNOT BE DOWNLOADED")
+            return
         self.soup_download_page = BeautifulSoup(
             self.download_page.content, features="html.parser"
         )

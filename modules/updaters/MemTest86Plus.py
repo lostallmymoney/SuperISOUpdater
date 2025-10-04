@@ -46,13 +46,13 @@ class MemTest86Plus(GenericUpdater):
         file_path = folder_path / FILE_NAME
         super().__init__(file_path)
 
-        self.download_page = requests.get(DOWNLOAD_PAGE_URL)
 
-        if self.download_page.status_code != 200:
-            raise ConnectionError(
-                f"Failed to fetch the download page from '{DOWNLOAD_PAGE_URL}'"
-            )
-
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        self.download_page = robust_get(DOWNLOAD_PAGE_URL, retries=get_cli_retries(), delay=1)
+        if self.download_page is None:
+            print("MemTest86Plus.py HAD 403 ERROR AND CANNOT BE DOWNLOADED")
+            return
         self.soup_download_page = BeautifulSoup(
             self.download_page.content, features="html.parser"
         )
@@ -81,15 +81,19 @@ class MemTest86Plus(GenericUpdater):
         """
         version_str = self._version_to_str(self._get_latest_version())
         sha_256_url = f"{DOWNLOAD_PAGE_URL}/download/v{version_str}/sha256sum.txt"
-        sha_256_checksums_str: str = requests.get(sha_256_url).text
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        resp = robust_get(sha_256_url, retries=get_cli_retries(), delay=1)
+        if resp is None:
+            raise ConnectionError(f"Failed to fetch sha256sum.txt from '{sha_256_url}'")
+        sha_256_checksums_str: str = resp.text
         sha_256_checksum: str = parse_hash(sha_256_checksums_str, ["64.iso"], 0)
-
         return sha256_hash_check(
             self._get_complete_normalized_file_path(absolute=True).with_suffix(".zip"),
             sha_256_checksum,
         )
 
-    def install_latest_version(self) -> None:
+    def install_latest_version(self, retries: int = 0) -> None:
         """
         Download and install the latest version of the software.
 
@@ -103,7 +107,7 @@ class MemTest86Plus(GenericUpdater):
 
         archive_path = new_file.with_suffix(".zip")
 
-        download_file(download_link, archive_path)
+        download_file(download_link, archive_path, retries=retries)
 
         local_file = self._get_local_file()
 

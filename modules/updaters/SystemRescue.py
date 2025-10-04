@@ -40,13 +40,17 @@ class SystemRescue(GenericUpdater):
         file_path = folder_path / FILE_NAME
         super().__init__(file_path)
 
-        self.download_page = requests.get(DOWNLOAD_PAGE_URL)
-
-        if self.download_page.status_code != 200:
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        resp = robust_get(DOWNLOAD_PAGE_URL, retries=get_cli_retries(), delay=1)
+        if resp is None:
+            print("SystemRescue.py HAD 403 ERROR AND CANNOT BE DOWNLOADED")
+            return
+        if resp.status_code != 200:
             raise ConnectionError(
                 f"Failed to fetch the download page from '{DOWNLOAD_PAGE_URL}'"
             )
-
+        self.download_page = resp
         self.soup_download_page = BeautifulSoup(
             self.download_page.content, features="html.parser"
         )
@@ -70,13 +74,16 @@ class SystemRescue(GenericUpdater):
         version_str = self._version_to_str(self._get_latest_version())
         sha256_download_link = f"{DOMAIN}/releases/{version_str}/systemrescue-{version_str}-amd64.iso.sha256"
 
-        r = requests.get(sha256_download_link)
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        resp = robust_get(sha256_download_link, retries=get_cli_retries(), delay=1)
+        if resp is None:
+            raise ConnectionError(f"Failed to fetch sha256 from '{sha256_download_link}'")
         sha256_checksum = parse_hash(
-            r.text,
+            resp.text,
             [str(self._get_normalized_file_path(False, self._get_latest_version()))],
             0,
         )
-
         return sha256_hash_check(
             self._get_complete_normalized_file_path(absolute=True),
             sha256_checksum,

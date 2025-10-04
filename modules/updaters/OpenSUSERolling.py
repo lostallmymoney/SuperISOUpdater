@@ -49,11 +49,13 @@ class OpenSUSERolling(GenericUpdater):
 
     def check_integrity(self) -> bool:
         sha256_url = f"{self._get_download_link()}.sha256"
-
-        sha256_sums = requests.get(sha256_url).text
-
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        resp = robust_get(sha256_url, retries=get_cli_retries(), delay=1)
+        if resp is None:
+            raise ConnectionError(f"Failed to fetch sha256 from '{sha256_url}'")
+        sha256_sums = resp.text
         sha256_sum = parse_hash(sha256_sums, [], 0)
-
         return sha256_hash_check(
             self._get_complete_normalized_file_path(absolute=True),
             sha256_sum,
@@ -61,7 +63,12 @@ class OpenSUSERolling(GenericUpdater):
 
     def _get_latest_version(self) -> list[str]:
         sha256_url = f"{self._get_download_link()}.sha256"
-        sha256_sums = requests.get(sha256_url).text
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        resp = robust_get(sha256_url, retries=get_cli_retries(), delay=1)
+        if resp is None:
+            raise ConnectionError(f"Failed to fetch sha256 from '{sha256_url}'")
+        sha256_sums = resp.text
         return self._str_to_version(sha256_sums.split(" ")[-1])
 
     def _str_to_version(self, version_str: str):

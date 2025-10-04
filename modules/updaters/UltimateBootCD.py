@@ -38,26 +38,28 @@ class UltimateBootCD(GenericUpdater):
         file_path = folder_path / FILE_NAME
         super().__init__(file_path)
 
-        self.download_page = requests.get(DOWNLOAD_PAGE_URL)
-
-        if self.download_page.status_code != 200:
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        resp = robust_get(DOWNLOAD_PAGE_URL, retries=get_cli_retries(), delay=1)
+        if resp is None:
+            print(f"UltimateBootCD.py HAD 403 ERROR AND CANNOT BE DOWNLOADED")
+            return
+        if resp.status_code != 200:
             raise ConnectionError(
                 f"Failed to fetch the download page from '{DOWNLOAD_PAGE_URL}'"
             )
-
+        self.download_page = resp
         self.soup_download_page = BeautifulSoup(
             self.download_page.content, features="html.parser"
         )
-
         self.mirrors = MIRRORS
         shuffle(self.mirrors)
-
         self.download_table: Tag | None = None
         for mirror in self.mirrors:
-            self.mirror_page = requests.get(mirror)
-
-            if self.mirror_page.status_code != 200:
+            resp_mirror = robust_get(mirror, retries=get_cli_retries(), delay=1)
+            if resp_mirror is None or resp_mirror.status_code != 200:
                 continue
+            self.mirror_page = resp_mirror
 
             self.soup_mirror_page = BeautifulSoup(
                 self.mirror_page.content, features="html.parser"
@@ -68,7 +70,7 @@ class UltimateBootCD(GenericUpdater):
                 self.mirror = mirror
                 break
 
-        if not self.mirror_page:
+        if not hasattr(self, 'mirror_page') or self.mirror_page is None:
             raise ConnectionError(f"Could not connect to any mirrors!")
 
         if not self.download_table:

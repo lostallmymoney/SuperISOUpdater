@@ -43,7 +43,13 @@ class Manjaro(GenericUpdater):
         file_path = folder_path / FILE_NAME
         super().__init__(file_path)
 
-        self.file_info_json = requests.get(DOWNLOAD_PAGE_URL).json()
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        resp = robust_get(DOWNLOAD_PAGE_URL, retries=get_cli_retries(), delay=1)
+        if resp is None:
+            print("Manjaro.py HAD 403 ERROR AND CANNOT BE DOWNLOADED")
+            return
+        self.file_info_json = resp.json()
         self.file_info_json["releases"] = (
             self.file_info_json["official"] | self.file_info_json["community"]
         )
@@ -54,9 +60,12 @@ class Manjaro(GenericUpdater):
 
     def check_integrity(self) -> bool:
         checksum_url = self.file_info_json["releases"][self.edition]["checksum"]
-
-        checksums = requests.get(checksum_url).text
-
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        resp = robust_get(checksum_url, retries=get_cli_retries(), delay=1)
+        if resp is None:
+            raise ConnectionError(f"Failed to fetch checksum from '{checksum_url}'")
+        checksums = resp.text
         checksum = parse_hash(checksums, [], 0)
 
         if checksum_url.endswith(".sha512"):

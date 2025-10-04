@@ -31,13 +31,17 @@ class Tails(GenericUpdater):
         file_path = folder_path / FILE_NAME
         super().__init__(file_path)
 
-        self.download_page = requests.get(DOWNLOAD_PAGE_URL)
-
-        if self.download_page.status_code != 200:
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        resp = robust_get(DOWNLOAD_PAGE_URL, retries=get_cli_retries(), delay=1)
+        if resp is None:
+            print("Tails.py HAD 403 ERROR AND CANNOT BE DOWNLOADED")
+            return
+        if resp.status_code != 200:
             raise ConnectionError(
                 f"Failed to fetch the download page from '{DOWNLOAD_PAGE_URL}'"
             )
-
+        self.download_page = resp
         self.soup_download_page = BeautifulSoup(
             self.download_page.content, features="html.parser"
         )
@@ -49,10 +53,15 @@ class Tails(GenericUpdater):
 
     def check_integrity(self) -> bool:
         sig_url = f"{self._get_download_link()}.sig"
-
-        sig = requests.get(sig_url).content
-        pub_key = requests.get(PUB_KEY_URL).content
-
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        retries = get_cli_retries()
+        resp_sig = robust_get(sig_url, retries=retries, delay=1)
+        resp_pub = robust_get(PUB_KEY_URL, retries=retries, delay=1)
+        if resp_sig is None or resp_pub is None:
+            raise ConnectionError(f"Failed to fetch signature or public key for Tails")
+        sig = resp_sig.content
+        pub_key = resp_pub.content
         return pgp_check(
             self._get_complete_normalized_file_path(absolute=True), sig, pub_key
         )

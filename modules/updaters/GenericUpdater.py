@@ -96,7 +96,7 @@ class GenericUpdater(ABC):
         )
         return is_update_available
 
-    def install_latest_version(self) -> None:
+    def install_latest_version(self, retries=0) -> None:
         """
         Install the latest version of the software.
 
@@ -117,7 +117,7 @@ class GenericUpdater(ABC):
                 )
                 old_file.with_suffix(".old").replace(old_file)
 
-        download_file(download_link, new_file)
+        download_file(download_link, new_file, retries=retries)
 
         # Check the integrity of the downloaded file
         try:
@@ -348,17 +348,16 @@ class GenericUpdater(ABC):
 
     def _str_to_version(self, version_str: str) -> list[str]:
         """
-        Convert a version string to a list of version components.
+        Convert a version string to a list of numeric version components only.
 
         Args:
             version_str (str): The version as a string.
 
         Returns:
-            list[str]: The version as a list of version components.
+            list[str]: The version as a list of numeric version components.
         """
         return [
-            version_number.strip()
-            for version_number in version_str.split(self.version_splitter)
+            v for v in (version_number.strip() for version_number in version_str.split(self.version_splitter)) if v.isdigit()
         ]
 
     @staticmethod

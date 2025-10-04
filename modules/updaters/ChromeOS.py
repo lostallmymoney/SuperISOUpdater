@@ -33,9 +33,13 @@ class ChromeOS(GenericUpdater):
         file_path = Path(folder_path) / FILE_NAME
         super().__init__(file_path)
 
-        self.chromium_releases_info: list[dict] = requests.get(
-            f"{DOMAIN}/dl/edgedl/chromeos/recovery/cloudready_recovery2.json"
-        ).json()
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        resp = robust_get(f"{DOMAIN}/dl/edgedl/chromeos/recovery/cloudready_recovery2.json", retries=get_cli_retries(), delay=1)
+        if resp is None:
+            print("ChromeOS.py HAD 403 ERROR AND CANNOT BE DOWNLOADED")
+            return
+        self.chromium_releases_info: list[dict] = resp.json()
 
         self.cur_edition_info: dict = next(
             d
@@ -55,7 +59,7 @@ class ChromeOS(GenericUpdater):
             sha1_sum,
         )
 
-    def install_latest_version(self) -> None:
+    def install_latest_version(self, retries: int = 0) -> None:
         """
         Download and install the latest version of the software.
 
@@ -70,7 +74,7 @@ class ChromeOS(GenericUpdater):
 
         local_file = self._get_local_file()
 
-        download_file(download_link, archive_path)
+        download_file(download_link, archive_path, retries=retries)
 
         try:
             integrity_check = self.check_integrity()

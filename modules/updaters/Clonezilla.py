@@ -31,8 +31,13 @@ class Clonezilla(GenericUpdater):
         return f"{repo}/clonezilla/clonezilla-live-{Clonezilla._get_clonezilla_version_style(ver)}-amd64.iso"
 
     def check_integrity(self) -> bool:
-        r = requests.get(f"{DOMAIN}/downloads/stable/checksums-contents.php")
-        soup = BeautifulSoup(r.content, features="html.parser")
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        resp = robust_get(f"{DOMAIN}/downloads/stable/checksums-contents.php", retries=get_cli_retries(), delay=1)
+        if resp is None:
+            print("Clonezilla.py HAD 403 ERROR AND CANNOT BE DOWNLOADED")
+            return
+        soup = BeautifulSoup(resp.content, features="html.parser")
         pre: Tag | None = soup.find("pre")  # type: ignore
         if not pre:
             raise IntegrityCheckError(
@@ -55,15 +60,22 @@ class Clonezilla(GenericUpdater):
 
     @cache
     def _get_latest_version(self) -> list[str]:
-        r = requests.get(f"{DOMAIN}/downloads/stable/changelog-contents.php")
-        soup = BeautifulSoup(r.content, features="html.parser")
+        from modules.utils_network import robust_get
+        from modules.utils_network_patch import get_cli_retries
+        resp = robust_get(f"{DOMAIN}/downloads/stable/changelog-contents.php", retries=get_cli_retries(), delay=1)
+        if resp is None:
+            raise ConnectionError(f"Failed to fetch changelog-contents.php from '{DOMAIN}'")
+        soup = BeautifulSoup(resp.content, features="html.parser")
         first_paragraph: Tag | None = soup.find("p")  # type: ignore
         if not first_paragraph:
             raise VersionNotFoundError(
                 "Unable to extract `<p>` elements from changelog"
             )
-        version = first_paragraph.getText().split()[-1]
-        return self._str_to_version(version.replace("-", "."))
+        version_raw = first_paragraph.getText().split()[-1]
+        # Only keep numeric and dot components for version comparison
+        version_clean = version_raw.replace("-", ".")
+        version_parts = [part for part in version_clean.split(".") if part.isdigit()]
+        return version_parts
 
     @cache
     @staticmethod
